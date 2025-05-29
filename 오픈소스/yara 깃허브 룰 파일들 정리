@@ -1,0 +1,12 @@
+#디렉토리 내 주요 YARA 룰 파일들
+#파일 이름	설명
+#Antidebug_AntiVM.yar	디버깅 회피 및 가상환경 탐지 관련 악성코드 룰
+#CVE_Rules/	CVE 취약점 기반 룰 (하위 디렉토리)
+#Capabilities.yar	악성코드 기능 분류별 룰
+#Crypto.yar	암호화 관련 악성코드 탐지 룰
+#Exploit-Kits.yar	익스플로잇 키트 탐지 룰
+#Malicious_Documents.yar	📄 문서 기반 악성코드 탐지 룰 (HWP 포함 가능성 있음)
+#Mobile_Malware.yar	모바일 악성 앱 탐지 룰
+#Packers.yar	파일을 난독화하거나 패킹한 악성코드 탐지
+#Webshells.yar	웹쉘 탐지 룰
+#email.yar	이메일 기반 공격 탐지 룰
