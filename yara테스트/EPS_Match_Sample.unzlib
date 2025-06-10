@@ -1,0 +1,65 @@
+% malicious EPS script
+4 mod get xor put
+exec
+/concatstrings
+dup dup 4 2 roll copy length
+get xor
+string dup
+putinterval
+repeat
+aload
+eaprocc
+1{1} put
+get closefile
+% malicious EPS script
+4 mod get xor put
+exec
+/concatstrings
+dup dup 4 2 roll copy length
+get xor
+string dup
+putinterval
+repeat
+aload
+eaprocc
+1{1} put
+get closefile
+% malicious EPS script
+4 mod get xor put
+exec
+/concatstrings
+dup dup 4 2 roll copy length
+get xor
+string dup
+putinterval
+repeat
+aload
+eaprocc
+1{1} put
+get closefile
+% malicious EPS script
+4 mod get xor put
+exec
+/concatstrings
+dup dup 4 2 roll copy length
+get xor
+string dup
+putinterval
+repeat
+aload
+eaprocc
+1{1} put
+get closefile
+% malicious EPS script
+4 mod get xor put
+exec
+/concatstrings
+dup dup 4 2 roll copy length
+get xor
+string dup
+putinterval
+repeat
+aload
+eaprocc
+1{1} put
+get closefile
