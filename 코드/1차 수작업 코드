@@ -1,0 +1,85 @@
+import olefile
+import zlib
+import re
+import os
+import sys
+from datetime import datetime
+
+def extract_streams_ole(file_path):
+    if not olefile.isOleFile(file_path):
+        print("[!] 유효한 HWP(OLE) 파일이 아닙니다.")
+        return []
+
+    ole = olefile.OleFileIO(file_path)
+    stream_data = []
+    for stream_name in ole.listdir():
+        try:
+            data = ole.openstream(stream_name).read()
+            stream_data.append(("/".join(stream_name), data))
+        except:
+            continue
+    return stream_data
+
+def try_decompress(data):
+    offsets = [i for i in range(len(data)-2) if data[i:i+2] in [b'\x78\x9c', b'\x78\x01', b'\x78\xda']]
+    for offset in offsets:
+        try:
+            return zlib.decompress(data[offset:])
+        except:
+            continue
+    return None
+
+def extract_strings(data, min_length=6):
+    pattern = rb"[ -~]{%d,}" % min_length
+    found = re.findall(pattern, data)
+    return [s.decode('utf-8', errors='ignore') for s in found if len(s) >= min_length]
+
+def generate_yara_rule(strings, rule_name="AutoRule_HWP", author="auto", max_strings=10):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    rule = f"rule {rule_name}_{timestamp} {{\n"
+    rule += "    meta:\n"
+    rule += f'        author = "{author}"\n'
+    rule += f'        date = "{timestamp}"\n'
+    rule += "    strings:\n"
+    for idx, s in enumerate(strings[:max_strings]):
+        safe = s.replace("\\", "\\\\").replace('"', '\\"')
+        rule += f'        $s{idx} = "{safe}"\n'
+    rule += "    condition:\n"
+    rule += "        all of them\n"
+    rule += "}\n"
+    return rule
+
+def generate_yara_from_hwp(hwp_path, output_dir="output"):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    streams = extract_streams_ole(hwp_path)
+    for name, raw in streams:
+        decompressed = try_decompress(raw)
+        if decompressed:
+            strings = extract_strings(decompressed)
+            if strings:
+                yara_rule = generate_yara_rule(strings)
+                output_path = os.path.join(output_dir, "generated_rule.yar")
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(yara_rule)
+                print(f"[+] YARA 룰이 생성되었습니다: {output_path}")
+                return
+    print("[-] zlib 압축된 스트림이 없거나 문자열이 부족합니다.")
+
+
+def main():
+    if len(sys.argv) == 2:
+        hwp_file = sys.argv[1]
+    else:
+        # Spyder 등에서 직접 경로 지정
+        hwp_file = "C:/Users/windw/Desktop/test_bin.hwp"  # ← 여기 경로 수정
+
+    if not os.path.isfile(hwp_file):
+        print(f"[!] 파일을 찾을 수 없습니다: {hwp_file}")
+        return
+
+    generate_yara_from_hwp(hwp_file)
+
+if __name__ == "__main__":
+    main()
