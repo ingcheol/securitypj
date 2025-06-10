@@ -1,0 +1,134 @@
+import streamlit as st
+import olefile
+import zlib
+import re
+import os
+from io import BytesIO
+from datetime import datetime
+
+# ----------------- 내부 함수 (기존 test.py 기반) -----------------
+def extract_streams_ole(file_obj):
+    if not olefile.isOleFile(file_obj):
+        st.error("유효한 HWP(OLE) 파일이 아닙니다.")
+        return []
+    ole = olefile.OleFileIO(file_obj)
+    stream_data = []
+    for stream_name in ole.listdir():
+        try:
+            data = ole.openstream(stream_name).read()
+            stream_data.append( ("/".join(stream_name), data) )
+        except:
+            continue
+    return stream_data
+
+def try_decompress(data):
+    offsets = [i for i in range(len(data)-2) if data[i:i+2] in [b'\x78\x9c', b'\x78\x01', b'\x78\xda']]
+    for offset in offsets:
+        try:
+            return zlib.decompress(data[offset:])
+        except:
+            continue
+    return None
+
+def extract_strings(data, min_length=6):
+    pattern = rb"[ -~]{%d,}" % min_length
+    found = re.findall(pattern, data)
+    return [s.decode('utf-8', errors='ignore') for s in found if len(s.strip()) >= min_length]
+
+def normalize(s):
+    return s.strip().replace(" ", "").replace("\t", "").replace("\n", "").lower()
+
+def is_noise(s):
+    return not re.search(r'[a-zA-Z]{3,}', s) or re.search(r'[^a-zA-Z0-9 _\-.:/\\]', s)
+
+def filter_malicious_strings(strings, safe_strings):
+    filtered = []
+    for s in strings:
+        norm = normalize(s)
+        if norm not in safe_strings and len(norm) >= 6 and not is_noise(s):
+            filtered.append(s)
+    return filtered
+
+def generate_yara_rule(strings, rule_name="AutoRule_HWP", author="auto", max_strings=10):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    rule = f"rule {rule_name}_{timestamp} {{\n"
+    rule += "    meta:\n"
+    rule += f'        author = "{author}"\n'
+    rule += f'        date = "{timestamp}"\n'
+    rule += "    strings:\n"
+    for idx, s in enumerate(strings[:max_strings]):
+        safe = s.replace("\\", "\\\\").replace('"', '\\"')
+        rule += f'        $s{idx} = "{safe}"\n'
+    rule += "    condition:\n        any of them\n}"
+    return rule
+
+def load_safe_strings():
+    path = "safe_strings.txt"
+    if not os.path.exists(path):
+        return set()
+    with open(path, "r", encoding="utf-8") as f:
+        return set(normalize(line) for line in f if line.strip())
+
+def save_safe_strings_to_file(strings):
+    path = "safe_strings.txt"
+    existing = load_safe_strings()
+    combined = existing.union(normalize(s) for s in strings)
+    with open(path, "w", encoding="utf-8") as f:
+        for s in sorted(combined):
+            f.write(s + "\n")
+    return len(combined)
+
+# ----------------- Streamlit UI -----------------
+st.title("HWP 악성코드 분석 및 YARA 룰 생성기")
+mode = st.radio("모드를 선택하세요:", ["정상 샘플 등록", "악성 샘플 분석"])
+
+uploaded_files = st.file_uploader(
+    "HWP 파일 업로드 (드래그 앤 드롭 지원)",
+    type=['hwp'],
+    accept_multiple_files=(mode == "정상 샘플 등록")
+)
+
+if uploaded_files:
+    if mode == "정상 샘플 등록":
+        all_strings = set()
+        for file in uploaded_files:
+            st.write(f"분석 중: {file.name}")
+            streams = extract_streams_ole(file)
+            for _, raw in streams:
+                decompressed = try_decompress(raw)
+                data = decompressed if decompressed else raw
+                strings = extract_strings(data)
+                all_strings.update(strings)
+
+        total = save_safe_strings_to_file(all_strings)
+        st.success(f"정상 문자열 {len(all_strings)}개 등록 완료 (누적 총 {total}개)")
+
+    elif mode == "악성 샘플 분석":
+        file = uploaded_files[0]
+        st.write(f"분석 중: {file.name}")
+        streams = extract_streams_ole(file)
+        safe_strings = load_safe_strings()
+        yara_outputs = []
+
+        for idx, (name, raw) in enumerate(streams):
+            decompressed = try_decompress(raw)
+            data = decompressed if decompressed else raw
+            strings = extract_strings(data)
+            filtered = filter_malicious_strings(strings, safe_strings)
+
+            if filtered:
+                st.subheader(f"🚨 의심 스트림: {name}")
+                st.code("\n".join(filtered), language='text')
+
+                yara_rule = generate_yara_rule(filtered)
+                st.code(yara_rule, language="text")
+
+                st.download_button(
+                    label=f"YARA 룰 다운로드: {name.replace('/', '_')}.yar",
+                    data=yara_rule,
+                    file_name=f"{idx}_{name.replace('/', '_')}.yar",
+                    mime="text/plain"
+                )
+
+        if not yara_outputs:
+            st.info("의심 스트림 또는 악성 문자열을 찾지 못했습니다.")
